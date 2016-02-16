@@ -1,13 +1,19 @@
 package com.tdevries.robotcontrol;
 
+import android.Manifest;
+import android.content.Context;
+import android.content.pm.PackageManager;
+import android.location.Location;
+import android.location.LocationListener;
+import android.location.LocationManager;
 import android.os.AsyncTask;
 import android.os.Bundle;
 import android.os.Handler;
-import android.support.v7.app.AppCompatActivity;
+import android.support.v4.app.ActivityCompat;
+import android.support.v4.app.FragmentActivity;
+import android.support.v4.content.ContextCompat;
 import android.util.Log;
 import android.view.View;
-import android.view.Menu;
-import android.view.MenuItem;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
 import android.widget.Button;
@@ -20,7 +26,27 @@ import java.net.InetSocketAddress;
 import java.net.Socket;
 import java.net.SocketAddress;
 
-public class MainActivity extends AppCompatActivity {
+import android.support.v4.app.FragmentActivity;
+import android.os.Bundle;
+
+import com.google.android.gms.maps.CameraUpdateFactory;
+import com.google.android.gms.maps.GoogleMap;
+import com.google.android.gms.maps.OnMapReadyCallback;
+import com.google.android.gms.maps.SupportMapFragment;
+import com.google.android.gms.maps.model.BitmapDescriptorFactory;
+import com.google.android.gms.maps.model.LatLng;
+import com.google.android.gms.maps.model.Marker;
+import com.google.android.gms.maps.model.MarkerOptions;
+
+public class MainActivity extends FragmentActivity implements OnMapReadyCallback {
+
+    private GoogleMap mMap;
+    private LocationManager locationManager;
+    private LocationListener locationListener;
+    LatLng operatorLocation;
+    LatLng robotLocation;
+    Marker operatorMarker;
+    Marker robotMarker;
 
     Button startStream_btn;
     EditText piIP_edtTxt;
@@ -35,6 +61,10 @@ public class MainActivity extends AppCompatActivity {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
 
+        SupportMapFragment mapFragment = (SupportMapFragment) getSupportFragmentManager()
+                .findFragmentById(R.id.map);
+        mapFragment.getMapAsync(this);
+
         startStream_btn = (Button) findViewById(R.id.startStream_btn);
         piIP_edtTxt = (EditText) findViewById(R.id.piIP_edtTxt);
         robotVideoStream_wv = (WebView) findViewById(R.id.robotVideoStream_wv);
@@ -44,6 +74,21 @@ public class MainActivity extends AppCompatActivity {
                 loadStream();
             }
         });
+
+        initGPS();
+    }
+
+    @Override
+    protected void onStop(){
+        super.onStop();
+
+        //Turns off GPS after closing app so battery isn't wasted
+        if (locationManager != null) {
+            if (ContextCompat.checkSelfPermission(this, android.Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
+                    || ContextCompat.checkSelfPermission(this, android.Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED) {
+                locationManager.removeUpdates(locationListener);
+            }
+        }
     }
 
     @Override
@@ -52,6 +97,65 @@ public class MainActivity extends AppCompatActivity {
         stopCommandSend();
         client.cancel(true);        //In case the task is currently running
     }
+
+    ////////////////////////////////////////////////////////////////////////////////////////////////
+    //                                     Map and GPS                                            //
+    ////////////////////////////////////////////////////////////////////////////////////////////////
+
+    public void initGPS() {
+        //Doesn't work currently, needs to check for permissions or something first
+        locationManager = (LocationManager) this.getSystemService(Context.LOCATION_SERVICE);
+
+        // Define a listener that responds to location updates
+        locationListener = new LocationListener() {
+
+            // Called when a new location is found by the network location provider.
+            public void onLocationChanged(Location location) {
+                double latitude = location.getLatitude();
+                double longitude = location.getLongitude();
+
+                operatorLocation = new LatLng(latitude, longitude);
+
+                if (operatorMarker == null){
+                    operatorMarker = mMap.addMarker(new MarkerOptions()
+                            .position(operatorLocation)
+                            .title("You")
+                            .icon(BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_BLUE)));
+                }
+                else
+                {
+                    operatorMarker.setPosition(operatorLocation);
+                }
+            }
+
+            public void onStatusChanged(String provider, int status, Bundle extras) {
+            }
+
+            public void onProviderEnabled(String provider) {
+            }
+
+            public void onProviderDisabled(String provider) {
+            }
+        };
+
+        if (locationManager != null) {
+            if (ContextCompat.checkSelfPermission(this, android.Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
+                    || ContextCompat.checkSelfPermission(this, android.Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED) {
+                // Register the listener with the Location Manager to receive location updates
+                locationManager.requestLocationUpdates(LocationManager.GPS_PROVIDER, 0, 0, locationListener);
+            }
+        }
+    }
+
+    @Override
+    public void onMapReady(GoogleMap googleMap) {
+        mMap = googleMap;
+        mMap.setMapType(GoogleMap.MAP_TYPE_SATELLITE);
+    }
+
+    ////////////////////////////////////////////////////////////////////////////////////////////////
+    //                                     Video Stream                                           //
+    ////////////////////////////////////////////////////////////////////////////////////////////////
 
     public void loadStream(){       //Run whenever the loadStream button is clicked
         String piIP = piIP_edtTxt.getText().toString();
@@ -74,6 +178,9 @@ public class MainActivity extends AppCompatActivity {
         });
     }
 
+    ////////////////////////////////////////////////////////////////////////////////////////////////
+    //                                     TCP Command Send                                       //
+    ////////////////////////////////////////////////////////////////////////////////////////////////
     Runnable sendCommand = new Runnable() {
         //https://stackoverflow.com/questions/6242268/repeat-a-task-with-a-time-delay
 
@@ -180,10 +287,28 @@ public class MainActivity extends AppCompatActivity {
         @Override
         protected void onProgressUpdate(byte[]... values) {
             if (values.length > 0) {
-                //Log.i("AsyncTask", "onProgressUpdate: " + values[0].length + " bytes received.");
-                Log.i("AsyncTask", "onProgressUpdate: " + new String(values[0]));
 
-                //GPS coordinates will be here. Use to update map.
+                String[] latlng = new String(values[0]).split(",");
+                Log.i("AsyncTask", "onProgressUpdate: " + latlng[0]);
+                //Need to add check here for null strings.
+                double latitude = Double.parseDouble(latlng[0]);
+                double longitude = Double.parseDouble(latlng[1]);
+
+                Log.i("AsyncTask", "onProgressUpdate: Latitude = " + latitude);
+                Log.i("AsyncTask", "onProgressUpdate: Longitude = " + longitude);
+
+                robotLocation = new LatLng(latitude, longitude);
+
+                if (robotMarker == null){
+                    robotMarker = mMap.addMarker(new MarkerOptions().position(robotLocation).title("Robot"));
+                    mMap.moveCamera(CameraUpdateFactory.newLatLngZoom((robotLocation), 19.f));
+                }
+                else
+                {
+                    robotMarker.setPosition(robotLocation);
+                }
+                float currentZoom = mMap.getCameraPosition().zoom;
+                mMap.animateCamera(CameraUpdateFactory.newLatLngZoom((robotLocation), currentZoom));
             }
         }
 

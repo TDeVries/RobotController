@@ -4,6 +4,7 @@
 
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
 
     <application
         android:allowBackup="true"
@@ -11,6 +12,14 @@
         android:label="@string/app_name"
         android:supportsRtl="true"
         android:theme="@style/AppTheme">
+
+
+        <!--
+        SHA1 Key: E7:8D:25:F4:E5:85:0C:62:B9:7B:FF:2C:6C:3F:EB:65:AB:19:EC:94
+        -->
+        <meta-data
+            android:name="com.google.android.geo.API_KEY"
+            android:value="AIzaSyD0YbgoKmNit6ZtDkYdzA2gHCfp6foi4AI" />
 
         <activity
             android:name=".MainActivity"
